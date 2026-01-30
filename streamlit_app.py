@@ -11,19 +11,13 @@ st.set_page_config(page_title="MPS Quote Engine - MI PC S.A.", page_icon="💻",
 # --- HEADER CON LOGO ---
 col_logo, col_titulo = st.columns([1, 5])
 with col_logo:
-    # -------------------------------------------------------------------------
-    # 📢 INSTRUCCIÓN PARA EL LOGO:
-    # 1. Guarda tu logo como "logo.png" en la misma carpeta que este script.
-    # 2. El sistema intentará cargarlo. Si no, usará uno genérico.
-    # -------------------------------------------------------------------------
     try:
         st.image("logo.png", width=120) 
     except:
-        # Logo genérico si no encuentra el archivo local
         st.image("https://cdn-icons-png.flaticon.com/512/3067/3067260.png", width=100)
 
 with col_titulo:
-    st.title("MI PC S.A. | Quote Engine V9.0")
+    st.title("MI PC S.A. | Quote Engine V9.1")
     st.markdown("**Sistema Oficial de Cotización y Análisis Financiero de Riesgo**")
 
 # --- ESTILOS CSS ---
@@ -34,24 +28,19 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] { gap: 8px; background-color: white; padding: 10px; border-radius: 12px 12px 0px 0px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
     .stTabs [data-baseweb="tab"] { height: 50px; font-weight: 600; color: #64748b; }
     .stTabs [aria-selected="true"] { background-color: #1e40af; color: white; }
-    
-    /* Tarjetas de Oferta */
     .offer-card { background: white; border: 1px solid #cbd5e1; border-radius: 16px; padding: 20px; text-align: center; height: 100%; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
     .offer-title { color: #1e40af; font-weight: 800; text-transform: uppercase; margin-bottom: 5px; font-size: 1.1rem; }
     .offer-price { font-size: 2.5rem; font-weight: 800; color: #0f172a; margin: 10px 0; }
     .offer-desc { font-size: 0.9rem; color: #64748b; margin-bottom: 10px; }
-    
-    /* Explicaciones de Ganancia */
     .profit-box { background-color: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 10px; margin-top: 15px; text-align: left; font-size: 0.85rem; border-radius: 4px; }
     .profit-title { font-weight: bold; color: #0369a1; display: block; margin-bottom: 4px; }
-    
     .badge-excess { background-color: #fee2e2; color: #991b1b; font-size: 0.8rem; padding: 4px 8px; border-radius: 10px; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
 # --- BACKEND ---
 def init_db():
-    conn = sqlite3.connect('mipc_mps_v9.db')
+    conn = sqlite3.connect('mipc_mps_v9_1.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS equipos
                  (id INTEGER PRIMARY KEY, marca TEXT, modelo TEXT, tipo TEXT, 
@@ -143,8 +132,21 @@ with st.sidebar:
     st.header("Configuración")
     margen_meta = st.slider("Margen Meta (%)", 10, 60, 30) / 100
     st.divider()
+    # VARIABLES GLOBALES
     incluir_papel = st.toggle("Incluir Papel", value=True)
     costo_papel = st.number_input("Costo Resma ($)", value=2.80) if incluir_papel else 0
+    
+    # --- AUTO RECALCULO (LA SOLUCIÓN DEL BUG) ---
+    # Si hay items en el proyecto, los actualizamos al instante con la configuración actual
+    if len(st.session_state['proyecto']) > 0:
+        for item in st.session_state['proyecto']:
+            # Volvemos a calcular el costo unitario con el estado actual del papel
+            det_actualizado = get_detalles_equipo(item['Eq_ID'], item['Vol. Unit'], incluir_papel, costo_papel)
+            # Actualizamos los valores dependientes
+            item['Costo Toner Unit'] = det_actualizado['cpp']
+            item['OPEX Var'] = det_actualizado['opex_var'] * item['Cantidad']
+            # (El resto de fijos no cambia con el papel, pero el variable sí)
+
     st.divider()
     if st.button("🗑️ Nuevo Proyecto", type="primary"):
         st.session_state['proyecto'] = []
@@ -235,7 +237,6 @@ with tabs[1]:
             st.divider()
             df_proy = pd.DataFrame(st.session_state['proyecto'])
             
-            # USO DE None PARA EVITAR BUG DE HIDDEN
             edited_proy = st.data_editor(df_proy, column_config={
                     "Cantidad": st.column_config.NumberColumn("Cant.", min_value=1),
                     "Vol. Unit": st.column_config.NumberColumn("Vol. Unit", min_value=1),
@@ -289,7 +290,7 @@ with tabs[2]:
                 st.metric("Intereses Totales", f"${interes_total:,.2f}")
                 st.plotly_chart(px.bar(df_amort, x="Mes", y=["Capital", "Interés"]), use_container_width=True)
 
-# ================= TAB 4: OFERTA COMERCIAL (EXPLICADA) =================
+# ================= TAB 4: OFERTA COMERCIAL =================
 with tabs[3]:
     st.subheader("Oferta Comercial y Desglose")
     if len(st.session_state['proyecto']) > 0:
@@ -342,7 +343,7 @@ with tabs[3]:
             <b>Riesgo:</b> Si imprimen hasta el límite, tu margen es el 30%. Si imprimen menos, tu margen SUBE (porque gastas menos tóner).<br>
             <i>Si se pasan, cobras excedente con penalidad.</i></div>""", unsafe_allow_html=True)
 
-# ================= TAB 5: PROYECCIÓN (RESTORED) =================
+# ================= TAB 5: PROYECCIÓN =================
 with tabs[4]:
     st.subheader("Proyección Financiera")
     if len(st.session_state['proyecto']) > 0:
@@ -364,21 +365,18 @@ with tabs[4]:
         st.plotly_chart(px.bar(df_f, x="Mes", y="Neto", title="Cash Flow Mensual", color="Neto", color_continuous_scale=["red", "green"]), use_container_width=True)
         st.plotly_chart(go.Figure().add_trace(go.Scatter(x=df_f['Mes'], y=df_f['Acumulado'], fill='tozeroy')).add_hline(y=0, line_color="red"), use_container_width=True)
         
-        # 2. Métricas y Descarga (RESTORED)
+        # 2. Métricas y Descarga
         st.divider()
         k1, k2, k3 = st.columns(3)
         
-        # VPN
         tasa_desc = 0.10 / 12
         vpn = sum(x['Neto'] / ((1 + tasa_desc) ** i) for i, x in enumerate(flujo, 1))
         k1.metric("VPN (Valor Presente Neto 10%)", f"${vpn:,.2f}")
         
-        # Payback
         recup = df_f[df_f['Acumulado'] >= 0]
         payback = recup.iloc[0]['Mes'] if not recup.empty else "N/A"
         k2.metric("Mes de Recuperación", payback)
         
-        # Download
         csv = df_f.to_csv(index=False).encode('utf-8')
         k3.download_button("📥 Descargar Proyección (Excel)", data=csv, file_name="proyeccion_mipc.csv", mime="text/csv", type="primary")
 
