@@ -3,35 +3,43 @@ import pandas as pd
 import numpy as np
 import sqlite3
 import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="MPS Engine V2.0", page_icon="🖨️", layout="wide")
+st.set_page_config(page_title="MPS Enterprise V3.2", page_icon="🏢", layout="wide")
 
-# Estilos CSS Profesionales
+# Estilos CSS
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
-        height: 50px; white-space: pre-wrap; background-color: #ffffff; border-radius: 4px 4px 0px 0px; gap: 1px; padding-top: 10px; padding-bottom: 10px;
+        height: 50px; background-color: #ffffff; border-radius: 4px; border: 1px solid #e0e0e0;
     }
-    .stTabs [aria-selected="true"] { background-color: #1E3A8A; color: white; }
-    .metric-card { background-color: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 5px solid #1E3A8A; }
-    h1, h2, h3 { color: #0F172A; }
+    .stTabs [aria-selected="true"] { background-color: #1E3A8A; color: white; border: none; }
+    .metric-card { 
+        background-color: white; padding: 20px; border-radius: 10px; 
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 5px solid #1E3A8A; 
+        text-align: center;
+    }
+    .offer-card {
+        background-color: #f0fdf4; border: 2px solid #10B981; padding: 15px; border-radius: 10px;
+        text-align: center; margin-bottom: 10px; height: 100%;
+    }
+    .offer-title { color: #047857; font-weight: bold; font-size: 18px; margin-bottom: 10px; text-decoration: underline;}
+    .offer-price { font-size: 26px; font-weight: bold; color: #1E3A8A; margin: 10px 0; }
+    .offer-detail { font-size: 14px; color: #475569; margin-top: 5px; }
+    .excess-price { font-size: 14px; color: #dc2626; font-weight: bold; background-color: #fee2e2; padding: 5px; border-radius: 5px; margin-top: 10px;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- CAPA DE DATOS (BACKEND SQLITE) ---
+# --- BACKEND (SQLITE) ---
 def init_db():
-    conn = sqlite3.connect('mps_data.db')
+    conn = sqlite3.connect('mps_enterprise.db')
     c = conn.cursor()
-    # Tabla Equipos
+    # Usamos IF NOT EXISTS para no borrar datos si el archivo ya existe (en local)
     c.execute('''CREATE TABLE IF NOT EXISTS equipos
                  (id INTEGER PRIMARY KEY, marca TEXT, modelo TEXT, tipo TEXT, 
                   velocidad INTEGER, costo_adq REAL, residual REAL, vida_util INTEGER, mantenimiento REAL)''')
-    # Tabla Consumibles
     c.execute('''CREATE TABLE IF NOT EXISTS consumibles
                  (id INTEGER PRIMARY KEY, equipo_id INTEGER, tipo TEXT, costo REAL, rendimiento INTEGER,
                   FOREIGN KEY(equipo_id) REFERENCES equipos(id))''')
@@ -40,295 +48,226 @@ def init_db():
 
 conn = init_db()
 
-# --- FUNCIONES DE CÁLCULO (LÓGICA DE NEGOCIO) ---
-
-def calcular_cpp(equipo_id, incluir_papel, costo_papel):
-    """Calcula el Costo Por Página (CPP) sumando consumibles + papel"""
+# --- LÓGICA FINANCIERA ---
+def calcular_costos_equipo(equipo_id, volumen, incluir_papel, costo_papel):
+    # 1. Costo Consumibles (Variable)
     df_cons = pd.read_sql_query(f"SELECT * FROM consumibles WHERE equipo_id = {equipo_id}", conn)
-    
-    cpp_total = 0
-    detalles = []
-    
-    # 1. Sumar consumibles (Toner, Drum, Fuser, etc.)
+    cpp_cons = 0
     for _, row in df_cons.iterrows():
         if row['rendimiento'] > 0:
-            costo_unit = row['costo'] / row['rendimiento']
-            cpp_total += costo_unit
-            detalles.append(f"{row['tipo']}: ${costo_unit:.4f}")
+            cpp_cons += row['costo'] / row['rendimiento']
     
-    # 2. Sumar Papel
-    costo_hoja_papel = 0
     if incluir_papel:
-        costo_hoja_papel = costo_papel / 500
-        cpp_total += costo_hoja_papel
-        detalles.append(f"Papel: ${costo_hoja_papel:.4f}")
-        
-    return cpp_total, detalles
+        cpp_cons += costo_papel / 500
 
-def calcular_amortizacion_francesa(monto, tasa_anual, meses):
-    """Calcula cuota mensual fija (Método Francés)"""
-    if tasa_anual == 0: return monto / meses
-    tasa_mensual = (tasa_anual / 100) / 12
-    cuota = monto * (tasa_mensual * (1 + tasa_mensual)**meses) / ((1 + tasa_mensual)**meses - 1)
-    return cuota
+    costo_variable_unitario = cpp_cons
+    costo_variable_total = cpp_cons * volumen
 
-# --- INTERFAZ DE USUARIO (FRONTEND) ---
+    # 2. Costo Fijo (Amortización + Mantenimiento)
+    equipo = pd.read_sql_query(f"SELECT * FROM equipos WHERE id = {equipo_id}", conn).iloc[0]
+    amortizacion = (equipo['costo_adq'] - equipo['residual']) / equipo['vida_util']
+    costo_fijo_total = amortizacion + equipo['mantenimiento']
 
-st.title("🖨️ MPS QUOTE ENGINE V2.0")
-st.markdown("**Sistema Integral de Gestión de Servicios de Impresión**")
+    return costo_fijo_total, costo_variable_total, equipo['modelo'], equipo['costo_adq']
 
-# Sidebar: Variables Globales
+# --- SESSION STATE ---
+if 'proyecto' not in st.session_state:
+    st.session_state['proyecto'] = []
+
+# --- INTERFAZ ---
+st.title("🏢 MPS ENTERPRISE V3.2 | Deal Architect")
+st.markdown("Generador de Contratos Corporativos con **Cálculo de Excedentes**.")
+
 with st.sidebar:
-    st.header("⚙️ Configuración Global")
+    st.header("Configuración Global")
     margen_meta = st.slider("Margen Meta (%)", 10, 60, 30) / 100
-    st.divider()
     incluir_papel = st.checkbox("Incluir Papel", value=True)
-    costo_papel = st.number_input("Costo Resma ($)", value=2.80, step=0.10)
-    st.info("Base de datos: Conectada (SQLite)")
+    costo_papel = st.number_input("Costo Resma ($)", value=2.80)
+    
+    st.divider()
+    st.info("💡 Nota: Si estás en la Nube, los datos se reinician al actualizar código. En PC local se mantienen.")
+    if st.button("🗑️ Limpiar Proyecto Actual"):
+        st.session_state['proyecto'] = []
+        st.rerun()
 
-# TABS PRINCIPALES
+# TABS
 tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 1. Simulación & Precios", 
-    "🛠️ 2. Inventario Equipos", 
-    "💰 3. Financiamiento", 
-    "📈 4. Proyección Financiera"
+    "🛠️ 1. Inventario", 
+    "🏗️ 2. Armador Proyecto", 
+    "📊 3. OFERTA COMERCIAL", 
+    "📈 4. Proyección"
 ])
 
 # ==============================================================================
-# TAB 2: INVENTARIO (Lo ponemos primero en código para poblar datos, pero es la Tab 2 visual)
-# ==============================================================================
-with tab2:
-    col_inv1, col_inv2 = st.columns([1, 2])
-    
-    with col_inv1:
-        st.subheader("Nuevo Equipo")
-        with st.form("form_equipo"):
-            marca = st.text_input("Marca")
-            modelo = st.text_input("Modelo")
-            tipo = st.selectbox("Tipo", ["Monocromo", "Color"])
-            velocidad = st.number_input("Velocidad (PPM)", 0)
-            costo_adq = st.number_input("Costo Adquisición ($)", 0.0)
-            residual = st.number_input("Valor Residual ($)", 0.0)
-            vida_util = st.number_input("Vida Útil (Meses)", 36)
-            manto = st.number_input("Costo Mantenimiento Mensual ($)", 0.0)
-            
-            submitted = st.form_submit_button("Guardar Equipo")
-            if submitted and modelo:
-                c = conn.cursor()
-                c.execute("INSERT INTO equipos (marca, modelo, tipo, velocidad, costo_adq, residual, vida_util, mantenimiento) VALUES (?,?,?,?,?,?,?,?)",
-                          (marca, modelo, tipo, velocidad, costo_adq, residual, vida_util, manto))
-                conn.commit()
-                st.success("Equipo guardado.")
-                st.rerun()
-
-    with col_inv2:
-        st.subheader("Gestión de Consumibles")
-        equipos_df = pd.read_sql_query("SELECT * FROM equipos", conn)
-        
-        if not equipos_df.empty:
-            equipo_sel_id = st.selectbox("Seleccionar Equipo para editar consumibles", 
-                                         equipos_df['id'].tolist(), 
-                                         format_func=lambda x: equipos_df[equipos_df['id'] == x]['modelo'].values[0])
-            
-            # Formulario Consumibles
-            with st.form("form_consumible"):
-                c1, c2, c3 = st.columns(3)
-                tipo_cons = c1.selectbox("Tipo", ["Toner", "Drum", "Fuser", "Belt", "Waste Box", "Kit Manto"])
-                costo_cons = c2.number_input("Costo ($)", 0.0)
-                rend_cons = c3.number_input("Rendimiento (Págs)", 0)
-                add_cons = st.form_submit_button("Agregar Consumible")
-                
-                if add_cons:
-                    c = conn.cursor()
-                    c.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)",
-                              (equipo_sel_id, tipo_cons, costo_cons, rend_cons))
-                    conn.commit()
-                    st.success("Consumible agregado.")
-                    st.rerun()
-            
-            # Ver consumibles actuales
-            cons_df = pd.read_sql_query(f"SELECT * FROM consumibles WHERE equipo_id = {equipo_sel_id}", conn)
-            st.dataframe(cons_df, hide_index=True)
-        else:
-            st.warning("Registra un equipo primero.")
-
-# ==============================================================================
-# TAB 1: SIMULACIÓN DE PRECIOS
+# TAB 1: INVENTARIO
 # ==============================================================================
 with tab1:
-    equipos_df = pd.read_sql_query("SELECT * FROM equipos", conn)
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.subheader("Alta de Equipos")
+        with st.form("nuevo_equipo"):
+            marca = st.text_input("Marca", "Brother")
+            modelo = st.text_input("Modelo")
+            costo = st.number_input("Costo Equipo ($)", 0.0)
+            residual = st.number_input("Valor Residual ($)", 50.0)
+            manto = st.number_input("Mantenimiento Mensual ($)", 20.0)
+            if st.form_submit_button("Guardar Equipo"):
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO equipos (marca, modelo, costo_adq, residual, vida_util, mantenimiento) VALUES (?,?,?,?,?,?)",
+                               (marca, modelo, costo, residual, 36, manto))
+                conn.commit()
+                st.success(f"Equipo {modelo} guardado.")
+                st.rerun()
     
-    if equipos_df.empty:
-        st.warning("⚠️ No hay equipos registrados. Ve a la pestaña 2 e ingresa el inventario.")
-    else:
-        # Selección del Equipo
-        col_sel, col_vol = st.columns(2)
-        with col_sel:
-            id_equipo_sim = st.selectbox("Selecciona Equipo a Cotizar", 
-                                         equipos_df['id'].tolist(), 
-                                         format_func=lambda x: equipos_df[equipos_df['id'] == x]['modelo'].values[0])
-        
-        # Recuperar datos del equipo
-        equipo_data = equipos_df[equipos_df['id'] == id_equipo_sim].iloc[0]
-        
-        with col_vol:
-            volumen_mensual = st.number_input("Volumen Mensual Estimado", value=5000, step=1000)
-
-        # CÁLCULOS
-        cpp_operativo, detalles_cpp = calcular_cpp(id_equipo_sim, incluir_papel, costo_papel)
-        
-        # Amortización Lineal Simple para Costo Operativo Interno
-        depreciacion_mensual = (equipo_data['costo_adq'] - equipo_data['residual']) / equipo_data['vida_util']
-        costo_fijo_mes = depreciacion_mensual + equipo_data['mantenimiento']
-        
-        # Costo Total Proyecto
-        costo_variable_total = cpp_operativo * volumen_mensual
-        costo_total_mensual = costo_fijo_mes + costo_variable_total
-        
-        # Precio Sugerido (Base Margen)
-        precio_venta_mensual = costo_total_mensual / (1 - margen_meta) # Fórmula correcta de margen sobre venta
-        precio_por_click = precio_venta_mensual / volumen_mensual
-
-        # --- VISUALIZACIÓN ---
-        st.markdown("### 🎯 Análisis de Costos y Precios")
-        
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Costo Operativo Unitario", f"${cpp_operativo:.4f}")
-        m2.metric("Costo Total Mensual", f"${costo_total_mensual:,.2f}")
-        m3.metric("Precio Sugerido (All-In)", f"${precio_por_click:.4f}")
-        m4.metric("Facturación Mensual", f"${precio_venta_mensual:,.2f}", delta=f"{margen_meta*100:.0f}% Margen")
-
-        # Guardar en Session State para usar en otras Tabs
-        st.session_state['simulacion'] = {
-            'equipo': equipo_data['modelo'],
-            'costo_adq': equipo_data['costo_adq'],
-            'ingreso_mensual': precio_venta_mensual,
-            'costo_operativo_mensual': costo_variable_total + equipo_data['mantenimiento'], # Sin amortización (eso va en financiero)
-            'volumen': volumen_mensual
-        }
-
-        # Desglose Visual
-        st.divider()
-        c_chart, c_prop = st.columns(2)
-        
-        with c_chart:
-            # Grafico Breakdown
-            labels = ['Depreciación', 'Mantenimiento', 'Consumibles + Papel', 'Utilidad Neta']
-            values = [depreciacion_mensual, equipo_data['mantenimiento'], costo_variable_total, (precio_venta_mensual - costo_total_mensual)]
-            fig = px.pie(names=labels, values=values, title="Estructura del Precio Mensual", hole=0.4)
-            st.plotly_chart(fig, use_container_width=True)
+    with c2:
+        st.subheader("Asignar Consumibles")
+        equipos = pd.read_sql("SELECT * FROM equipos", conn)
+        if not equipos.empty:
+            eq_id = st.selectbox("Seleccionar Equipo", equipos['id'].tolist(), format_func=lambda x: equipos[equipos['id']==x]['modelo'].values[0])
+            with st.form("nuevo_cons"):
+                col_a, col_b, col_c = st.columns(3)
+                tipo = col_a.selectbox("Tipo", ["Toner", "Drum", "Fuser", "Kit"])
+                costo_c = col_b.number_input("Costo ($)", 0.0)
+                rend = col_c.number_input("Rendimiento", 10000)
+                if st.form_submit_button("Guardar Consumible"):
+                    cursor = conn.cursor()
+                    cursor.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (eq_id, tipo, costo_c, rend))
+                    conn.commit()
+                    st.success("Consumible agregado.")
             
-        with c_prop:
-            st.subheader("📋 Propuestas Comerciales")
-            st.info(f"**Plan A (Variable Puro):** ${precio_por_click:.4f} por página.")
-            st.success(f"**Plan B (Híbrido):** Renta ${costo_fijo_mes*1.3:,.2f} + Click ${(cpp_operativo*1.3):.4f}")
-            st.warning(f"**Plan C (Tarifa Plana):** ${precio_venta_mensual:,.2f} mensuales (Hasta {volumen_mensual} págs).")
+            # Mostrar consumibles actuales
+            cons_actuales = pd.read_sql(f"SELECT tipo, costo, rendimiento FROM consumibles WHERE equipo_id={eq_id}", conn)
+            if not cons_actuales.empty:
+                st.dataframe(cons_actuales, use_container_width=True)
+        else:
+            st.warning("Registra al menos un equipo a la izquierda.")
 
 # ==============================================================================
-# TAB 3: ESCENARIOS DE FINANCIAMIENTO
+# TAB 2: ARMADOR
+# ==============================================================================
+with tab2:
+    st.subheader("🛒 Construcción del Contrato")
+    equipos_disponibles = pd.read_sql("SELECT * FROM equipos", conn)
+    
+    if equipos_disponibles.empty:
+        st.warning("Ve a la Pestaña 1 y carga tus impresoras primero.")
+    else:
+        with st.container():
+            c1, c2, c3, c4, c5 = st.columns([2, 2, 1, 1, 1])
+            with c1: sede = st.text_input("Sede / Área", placeholder="Ej: Contabilidad")
+            with c2: id_eq_sel = st.selectbox("Modelo", equipos_disponibles['id'].tolist(), format_func=lambda x: equipos_disponibles[equipos_disponibles['id']==x]['modelo'].values[0])
+            with c3: cantidad = st.number_input("Cant.", 1, 100, 1)
+            with c4: vol_unit = st.number_input("Vol. Unitario", 100, 100000, 2000)
+            with c5: 
+                st.write("")
+                st.write("")
+                btn = st.button("➕ Agregar")
+
+        if btn and sede:
+            fijo_u, var_u_tot, mod_nom, cost_adq = calcular_costos_equipo(id_eq_sel, vol_unit, incluir_papel, costo_papel)
+            
+            # Totales Línea
+            costo_fijo_tot = fijo_u * cantidad
+            costo_var_tot = var_u_tot * cantidad
+            costo_total = costo_fijo_tot + costo_var_tot
+            
+            item = {
+                "Sede": sede, "Modelo": mod_nom, "Cantidad": cantidad,
+                "Vol. Total": vol_unit * cantidad,
+                "Costo Fijo Raw": costo_fijo_tot, "Costo Var Raw": costo_var_tot,
+                "Inversión": cost_adq * cantidad
+            }
+            st.session_state['proyecto'].append(item)
+            st.success(f"Agregado: {sede}")
+
+        if len(st.session_state['proyecto']) > 0:
+            df = pd.DataFrame(st.session_state['proyecto'])
+            st.divider()
+            st.dataframe(df[["Sede", "Modelo", "Cantidad", "Vol. Total"]].style.format({"Vol. Total": "{:,.0f}"}), use_container_width=True)
+            if st.button("Deshacer última línea"):
+                st.session_state['proyecto'].pop()
+                st.rerun()
+
+# ==============================================================================
+# TAB 3: OFERTA COMERCIAL (CON EXCEDENTES)
 # ==============================================================================
 with tab3:
-    if 'simulacion' not in st.session_state:
-        st.warning("Primero realiza una simulación en la Pestaña 1.")
+    if len(st.session_state['proyecto']) == 0:
+        st.info("Arma el proyecto primero.")
     else:
-        sim = st.session_state['simulacion']
-        st.subheader(f"Financiamiento para: {sim['equipo']}")
-        st.write(f"Inversión Requerida: **${sim['costo_adq']:,.2f}**")
+        df = pd.DataFrame(st.session_state['proyecto'])
         
-        col_fin1, col_fin2 = st.columns(2)
+        # Totales
+        vol_total = df['Vol. Total'].sum()
+        costo_fijo_tot = df['Costo Fijo Raw'].sum()
+        costo_var_tot = df['Costo Var Raw'].sum()
+        costo_total_proyecto = costo_fijo_tot + costo_var_tot
         
-        with col_fin1:
-            escenario = st.radio("Método de Adquisición", ["Contado (Fondos Propios)", "Préstamo Bancario", "Crédito Mayorista"])
+        # Margen Venta
+        facturacion_target = costo_total_proyecto / (1 - margen_meta)
         
-        with col_fin2:
-            tasa = 0.0
-            plazo = 12
-            if escenario != "Contado (Fondos Propios)":
-                tasa = st.number_input("Tasa Interés Anual (%)", 0.0, 50.0, 12.0)
-                plazo = st.slider("Plazo (Meses)", 12, 60, 36)
+        # --- CÁLCULO DE ESTRATEGIAS ---
         
-        # Calcular Cuota
-        cuota_financiera = 0
-        total_intereses = 0
+        # A. PRECIO ÚNICO
+        precio_unico = facturacion_target / vol_total if vol_total > 0 else 0
         
-        if escenario == "Contado (Fondos Propios)":
-            st.session_state['flujo_financiero'] = {'cuota': 0, 'inicial': sim['costo_adq']}
-        else:
-            cuota_financiera = calcular_amortizacion_francesa(sim['costo_adq'], tasa, plazo)
-            total_pagado = cuota_financiera * plazo
-            total_intereses = total_pagado - sim['costo_adq']
+        # B. HÍBRIDO
+        renta_sug = costo_fijo_tot / (1 - margen_meta)
+        click_sug = (costo_var_tot / (1 - margen_meta)) / vol_total if vol_total > 0 else 0
+        
+        # C. TARIFA PLANA (CON EXCEDENTE)
+        mensualidad = facturacion_target
+        # Precio Excedente = Precio Único (A) + 10% Penalidad
+        precio_excedente = precio_unico * 1.10
+        
+        # --- VISUALIZACIÓN ---
+        st.markdown(f"### 🏆 ESTRATEGIAS COMERCIALES (Margen {margen_meta*100:.0f}%)")
+        
+        c1, c2, c3 = st.columns(3)
+        
+        with c1:
+            st.markdown("""<div class="offer-card"><div class="offer-title">OPCIÓN A<br>PRECIO ÚNICO</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="offer-price">${precio_unico:.4f}</div>""", unsafe_allow_html=True)
+            st.markdown("""<div class="offer-detail">Pago 100% Variable por hoja.<br>Todo incluido.</div>""", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
             
-            st.markdown(f"""
-            <div class="metric-card">
-                <h3>Resultados Financieros</h3>
-                <p>Cuota Mensual: <b>${cuota_financiera:,.2f}</b></p>
-                <p>Total Intereses: <span style='color:red'>${total_intereses:,.2f}</span></p>
-            </div>
-            """, unsafe_allow_html=True)
+        with c2:
+            st.markdown("""<div class="offer-card"><div class="offer-title">OPCIÓN B<br>HÍBRIDO</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="offer-price">${renta_sug:,.2f}</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="offer-detail">+ Click: <b>${click_sug:.4f}</b><br>Renta asegura equipos.</div>""", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
             
-            st.session_state['flujo_financiero'] = {'cuota': cuota_financiera, 'inicial': 0, 'plazo': plazo}
+        with c3:
+            st.markdown("""<div class="offer-card"><div class="offer-title">OPCIÓN C<br>TARIFA PLANA</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="offer-price">${mensualidad:,.2f}</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="offer-detail">Bolsa de {vol_total:,.0f} páginas.<br>Factura fija mensual.</div>""", unsafe_allow_html=True)
+            # AQUÍ ESTÁ EL EXCEDENTE
+            st.markdown(f"""<div class="excess-price">⚠️ Excedente: ${precio_excedente:.4f} / pág</div>""", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.divider()
+        st.metric("Utilidad Mensual Proyectada", f"${(facturacion_target - costo_total_proyecto):,.2f}", delta="Ganancia Neta")
 
 # ==============================================================================
-# TAB 4: PROYECCIÓN FINANCIERA (CASH FLOW)
+# TAB 4: PROYECCIÓN
 # ==============================================================================
 with tab4:
-    if 'flujo_financiero' not in st.session_state:
-        st.warning("Configura el financiamiento en la Pestaña 3.")
-    else:
-        sim = st.session_state['simulacion']
-        fin = st.session_state['flujo_financiero']
+    if len(st.session_state['proyecto']) > 0:
+        meses = st.slider("Plazo", 12, 60, 36)
+        inversion = df['Inversión'].sum()
+        utilidad = facturacion_target - costo_total_proyecto
         
-        meses_proyeccion = st.slider("Meses a Proyectar", 12, 60, 36)
+        # Cash Flow
+        flujo = [utilidad] * meses
+        flujo[0] -= inversion
+        acumulado = np.cumsum(flujo)
         
-        # Construir Flujo de Caja
-        flujo = []
-        acumulado = 0
-        saldo_caja = -fin['inicial'] # Si es contado, empieza negativo
+        # Gráfico
+        df_chart = pd.DataFrame({"Mes": range(1, meses+1), "Acumulado": acumulado})
+        fig = px.area(df_chart, x="Mes", y="Acumulado", title="Cash Flow Acumulado (ROI)")
+        fig.add_hline(y=0, line_dash="dot", line_color="red")
         
-        for m in range(1, meses_proyeccion + 1):
-            ingreso = sim['ingreso_mensual']
-            egreso_op = sim['costo_operativo_mensual']
-            
-            # Egreso Financiero (Cuota) solo si está dentro del plazo del crédito
-            egreso_fin = fin['cuota'] if (fin.get('plazo', 0) >= m) else 0
-            
-            neto_mes = ingreso - egreso_op - egreso_fin
-            saldo_caja += neto_mes
-            
-            flujo.append({
-                "Mes": m,
-                "Ingresos": ingreso,
-                "Costos Operativos": egreso_op,
-                "Pago Financiero": egreso_fin,
-                "Utilidad Neta": neto_mes,
-                "Flujo Acumulado": saldo_caja
-            })
-            
-        df_flujo = pd.DataFrame(flujo)
-        
-        # Métricas Resumen
-        col_res1, col_res2, col_res3 = st.columns(3)
-        total_utilidad = df_flujo['Utilidad Neta'].sum()
-        roi = (total_utilidad / sim['costo_adq']) * 100
-        
-        col_res1.metric("Utilidad Total Proyectada", f"${total_utilidad:,.2f}")
-        col_res2.metric("ROI del Proyecto", f"{roi:.1f}%")
-        col_res3.metric("Punto de Recuperación", f"Mes {df_flujo[df_flujo['Flujo Acumulado'] > 0].index.min() + 1 if (df_flujo['Flujo Acumulado'] > 0).any() else 'N/A'}")
-
-        # Gráficos
-        tab_g1, tab_g2 = st.tabs(["📉 Flujo Mensual", "🚀 Flujo Acumulado"])
-        
-        with tab_g1:
-            fig_bar = px.bar(df_flujo, x="Mes", y=["Ingresos", "Costos Operativos", "Pago Financiero"], 
-                             title="Ingresos vs Egresos Mensuales", barmode='group')
-            st.plotly_chart(fig_bar, use_container_width=True)
-            
-        with tab_g2:
-            fig_area = px.area(df_flujo, x="Mes", y="Flujo Acumulado", title="Crecimiento de la Caja (Cash Flow)")
-            # Línea de 0
-            fig_area.add_hline(y=0, line_dash="dot", line_color="red", annotation_text="Break Even")
-            st.plotly_chart(fig_area, use_container_width=True)
-            
-        # Exportar
-        csv = df_flujo.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Descargar Proyección a Excel (CSV)", data=csv, file_name="proyeccion_mps.csv", mime="text/csv")
+        c1, c2 = st.columns([1, 3])
+        c1.metric("Inversión Total", f"${inversion:,.2f}")
+        c1.metric("ROI Total", f"{(acumulado[-1]/inversion)*100:.1f}%")
+        c2.plotly_chart(fig, use_container_width=True)
