@@ -5,8 +5,8 @@ import sqlite3
 import plotly.express as px
 import plotly.graph_objects as go
 
-# --- 1. CONFIGURACIÓN ---
-st.set_page_config(page_title="MPS Quote Engine V7.1", page_icon="🚀", layout="wide")
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="MPS Quote Engine V7.2", page_icon="🚀", layout="wide")
 
 st.title("🚀 MPS QUOTE ENGINE | Generador de Contratos")
 st.markdown("Simulador financiero integral para contratos MPS — costos, márgenes, financiamiento y proyecciones.")
@@ -30,7 +30,7 @@ st.markdown("""
 
 # --- BACKEND ---
 def init_db():
-    conn = sqlite3.connect('mps_cfo_v7_1.db')
+    conn = sqlite3.connect('mps_cfo_v7_2.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS equipos
                  (id INTEGER PRIMARY KEY, marca TEXT, modelo TEXT, tipo TEXT, 
@@ -39,7 +39,7 @@ def init_db():
                  (id INTEGER PRIMARY KEY, equipo_id INTEGER, tipo TEXT, costo REAL, rendimiento INTEGER,
                   FOREIGN KEY(equipo_id) REFERENCES equipos(id))''')
     
-    # Pre-carga (Solo si vacía)
+    # Pre-carga Brother (Solo si vacía)
     c.execute("SELECT count(*) FROM equipos")
     if c.fetchone()[0] == 0:
         # L6915DW
@@ -47,16 +47,19 @@ def init_db():
         id_1 = c.lastrowid
         c.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (id_1, "Toner", 145.48, 25000))
         c.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (id_1, "Drum", 97.19, 75000))
+        c.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (id_1, "Fuser", 185.00, 200000))
         # L6900DW
-        c.execute("INSERT INTO equipos (marca, modelo, costo_adq, residual, vida_util, mantenimiento) VALUES (?,?,?,?,?,?)", ("Brother", "MFC-L6900DW", 856.00, 50.00, 36, 25.00))
+        c.execute("INSERT INTO equipos (marca, modelo, costo_adq, residual, vida_util, mantenimiento) VALUES (?,?,?,?,?,?)", ("Brother", "MFC-L6900DW", 856.00, 50.00, 36, 20.00))
         id_2 = c.lastrowid
         c.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (id_2, "Toner", 112.50, 20000))
         c.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (id_2, "Drum", 86.89, 50000))
+        c.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (id_2, "Fuser", 185.00, 200000))
         # Color
         c.execute("INSERT INTO equipos (marca, modelo, costo_adq, residual, vida_util, mantenimiento) VALUES (?,?,?,?,?,?)", ("Brother", "MFC-L9630CDN", 1275.00, 50.00, 36, 20.00))
         id_3 = c.lastrowid
         c.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (id_3, "Toner CMYK", 492.00, 10000))
         c.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (id_3, "Drum", 178.64, 100000))
+        c.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (id_3, "Fuser", 185.00, 200000))
     conn.commit()
     return conn
 
@@ -124,62 +127,85 @@ with st.sidebar:
         st.rerun()
 
 # --- TABS ---
-tabs = st.tabs(["🛠️ 1. Inventario (Editable)", "🏗️ 2. Armador", "💰 3. Financiamiento", "📊 4. Oferta Comercial", "📈 5. Proyección", "📦 6. Stock"])
+tabs = st.tabs(["🛠️ 1. Inventario (CRUD)", "🏗️ 2. Armador", "💰 3. Financiamiento", "📊 4. Oferta Comercial", "📈 5. Proyección", "📦 6. Stock"])
 
-# ================= TAB 1: INVENTARIO (MEJORADO) =================
+# ================= TAB 1: INVENTARIO (CORREGIDO) =================
 with tabs[0]:
     st.subheader("Gestión Maestra de Inventario")
     
-    # 1. TABLA DE EQUIPOS EDITABLE (LA NOVEDAD)
-    st.markdown("##### 🖨️ Equipos y Mantenimiento")
-    st.info("💡 Haz doble clic en cualquier celda para corregir costos o mantenimientos.")
-    
+    # 1. FORMULARIO DE ALTA (RECUPERADO)
+    with st.expander("➕ CREAR NUEVO MODELO DE IMPRESORA", expanded=False):
+        with st.form("alta_nueva"):
+            c1, c2, c3 = st.columns(3)
+            new_marca = c1.text_input("Marca (Ej. HP)")
+            new_modelo = c2.text_input("Modelo (Ej. M428dw)")
+            new_tipo = c3.selectbox("Tipo", ["B/N", "Color"])
+            
+            c4, c5, c6 = st.columns(3)
+            new_costo = c4.number_input("Costo Equipo ($)", 0.0)
+            new_resid = c5.number_input("Valor Residual ($)", 0.0)
+            new_manto = c6.number_input("Manto Mensual ($)", 0.0)
+            
+            if st.form_submit_button("Guardar Nuevo Equipo"):
+                if new_modelo:
+                    conn.execute("INSERT INTO equipos (marca, modelo, tipo, costo_adq, residual, vida_util, mantenimiento) VALUES (?,?,?,?,?,?,?)",
+                                 (new_marca, new_modelo, new_tipo, new_costo, new_resid, 36, new_manto))
+                    conn.commit()
+                    st.success(f"Equipo {new_modelo} agregado correctamente.")
+                    st.rerun()
+                else:
+                    st.error("El modelo es obligatorio.")
+
+    st.divider()
+
+    # 2. TABLA DE EDICIÓN (MANTENIDA)
+    st.markdown("##### 📝 Editar Equipos Existentes")
     equipos_df = pd.read_sql("SELECT id, marca, modelo, costo_adq, residual, mantenimiento FROM equipos", conn)
     edited_equipos = st.data_editor(
         equipos_df,
         column_config={
             "id": st.column_config.NumberColumn("ID", disabled=True),
             "costo_adq": st.column_config.NumberColumn("Costo Equipo ($)", min_value=0, format="$%.2f"),
-            "residual": st.column_config.NumberColumn("V. Residual ($)", min_value=0, format="$%.2f"),
-            "mantenimiento": st.column_config.NumberColumn("Manto. Mes ($)", min_value=0, format="$%.2f", help="Costo fijo técnico mensual")
+            "mantenimiento": st.column_config.NumberColumn("Manto ($)", min_value=0, format="$%.2f")
         },
-        use_container_width=True,
-        hide_index=True,
-        key="editor_equipos"
+        use_container_width=True, hide_index=True, key="editor_equipos"
     )
 
-    col_btn1, col_btn2 = st.columns([1, 4])
-    with col_btn1:
-        if st.button("💾 Actualizar Equipos"):
-            # Actualizar DB iterando sobre el DF editado
-            for index, row in edited_equipos.iterrows():
-                conn.execute("""
-                    UPDATE equipos 
-                    SET marca=?, modelo=?, costo_adq=?, residual=?, mantenimiento=?
-                    WHERE id=?
-                """, (row['marca'], row['modelo'], row['costo_adq'], row['residual'], row['mantenimiento'], row['id']))
-            conn.commit()
-            st.success("¡Equipos y Costos de Mantenimiento actualizados!")
-            st.rerun()
+    if st.button("💾 Actualizar Cambios en Equipos"):
+        for index, row in edited_equipos.iterrows():
+            conn.execute("UPDATE equipos SET marca=?, modelo=?, costo_adq=?, residual=?, mantenimiento=? WHERE id=?", 
+                         (row['marca'], row['modelo'], row['costo_adq'], row['residual'], row['mantenimiento'], row['id']))
+        conn.commit()
+        st.success("Cambios guardados.")
+        st.rerun()
 
     st.divider()
 
-    # 2. TABLA DE CONSUMIBLES
-    st.markdown("##### 🧪 Consumibles por Equipo")
+    # 3. CONSUMIBLES
+    st.markdown("##### 🧪 Consumibles")
     eq_list = pd.read_sql("SELECT id, modelo FROM equipos", conn)
     if not eq_list.empty:
-        eq_sel = st.selectbox("Ver consumibles de:", eq_list['id'].tolist(), format_func=lambda x: eq_list[eq_list['id']==x]['modelo'].values[0])
+        eq_sel = st.selectbox("Seleccionar Equipo:", eq_list['id'].tolist(), format_func=lambda x: eq_list[eq_list['id']==x]['modelo'].values[0])
         
+        # Formulario Rápido Agregar Consumible
+        with st.form("add_cons_fast"):
+            cc1, cc2, cc3, cc4 = st.columns([2,1,1,1])
+            t_tipo = cc1.text_input("Tipo (Ej. Toner)")
+            t_costo = cc2.number_input("Costo ($)", 0.0)
+            t_rend = cc3.number_input("Rend. (Págs)", 1000)
+            if cc4.form_submit_button("➕ Agregar"):
+                conn.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (eq_sel, t_tipo, t_costo, t_rend))
+                conn.commit(); st.rerun()
+
+        # Tabla Editable Consumibles
         cons_df = pd.read_sql(f"SELECT tipo, costo, rendimiento FROM consumibles WHERE equipo_id={eq_sel}", conn)
         edited_cons = st.data_editor(cons_df, num_rows="dynamic", use_container_width=True, key="editor_cons")
         
-        if st.button("💾 Actualizar Consumibles"):
+        if st.button("💾 Guardar Consumibles"):
             conn.execute(f"DELETE FROM consumibles WHERE equipo_id={eq_sel}")
             for i, r in edited_cons.iterrows():
                 if r['tipo']: conn.execute("INSERT INTO consumibles (equipo_id, tipo, costo, rendimiento) VALUES (?,?,?,?)", (eq_sel, r['tipo'], r['costo'], r['rendimiento']))
-            conn.commit()
-            st.success("Consumibles guardados.")
-            st.rerun()
+            conn.commit(); st.success("Consumibles actualizados."); st.rerun()
 
 # ================= TAB 2: ARMADOR =================
 with tabs[1]:
@@ -187,7 +213,7 @@ with tabs[1]:
     eqs = pd.read_sql("SELECT * FROM equipos", conn)
     
     if not eqs.empty:
-        with st.expander("➕ Agregar Línea", expanded=True):
+        with st.expander("➕ Agregar Línea al Proyecto", expanded=True):
             c1, c2, c3, c4, c5 = st.columns([2, 2, 1, 1, 1])
             with c1: sede = st.text_input("Sede / Dpto")
             with c2: id_eq = st.selectbox("Modelo", eqs['id'].tolist(), format_func=lambda x: eqs[eqs['id']==x]['modelo'].values[0])
@@ -334,7 +360,6 @@ with tabs[4]:
         
         df_f = pd.DataFrame(flujo)
         
-        # Gráficos
         st.markdown("#### 📊 Cash Flow Mensual (Ingresos - Egresos)")
         fig_cf = px.bar(df_f, x="Mes", y="Neto", title="Flujo Neto Mensual", color="Neto", color_continuous_scale=["red", "green"])
         st.plotly_chart(fig_cf, use_container_width=True)
@@ -342,6 +367,11 @@ with tabs[4]:
         tasa_desc = 0.10 / 12
         vpn = sum(x['Neto'] / ((1 + tasa_desc) ** i) for i, x in enumerate(flujo, 1))
         st.info(f"💰 **VPN (10%) = ${vpn:,.2f}**")
+        
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(x=df_f['Mes'], y=df_f['Acumulado'], fill='tozeroy', mode='lines', name='Acumulado'))
+        fig2.add_hline(y=0, line_dash="dot", line_color="red")
+        st.plotly_chart(fig2, use_container_width=True)
 
 # ================= TAB 6: STOCK =================
 with tabs[5]:
