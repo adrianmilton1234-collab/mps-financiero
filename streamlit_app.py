@@ -6,31 +6,52 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- CONFIGURACIÓN ---
-st.set_page_config(page_title="MPS Quote Engine V8.1", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="MPS Quote Engine - MI PC S.A.", page_icon="💻", layout="wide")
 
-st.title("🚀 MPS QUOTE ENGINE | Generador de Contratos")
-st.markdown("Simulador financiero integral: Costos Unitarios, Proyecciones y Matriz de Precios Rápida.")
+# --- HEADER CON LOGO ---
+col_logo, col_titulo = st.columns([1, 5])
+with col_logo:
+    # -------------------------------------------------------------------------
+    # 📢 INSTRUCCIÓN PARA EL LOGO:
+    # 1. Guarda tu logo como "logo.png" en la misma carpeta que este script.
+    # 2. El sistema intentará cargarlo. Si no, usará uno genérico.
+    # -------------------------------------------------------------------------
+    try:
+        st.image("logo.png", width=120) 
+    except:
+        # Logo genérico si no encuentra el archivo local
+        st.image("https://cdn-icons-png.flaticon.com/512/3067/3067260.png", width=100)
+
+with col_titulo:
+    st.title("MI PC S.A. | Quote Engine V9.0")
+    st.markdown("**Sistema Oficial de Cotización y Análisis Financiero de Riesgo**")
 
 # --- ESTILOS CSS ---
 st.markdown("""
     <style>
-    .main { background-color: #f8fafc; }
-    h1, h2, h3 { color: #0f172a; font-family: 'Segoe UI', sans-serif; }
+    .main { background-color: #f1f5f9; }
+    h1, h2, h3 { color: #1e3a8a; font-family: 'Segoe UI', sans-serif; }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; background-color: white; padding: 10px; border-radius: 12px 12px 0px 0px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
     .stTabs [data-baseweb="tab"] { height: 50px; font-weight: 600; color: #64748b; }
     .stTabs [aria-selected="true"] { background-color: #1e40af; color: white; }
-    .offer-card { background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: space-between; }
-    .offer-title { color: #1e40af; font-weight: 800; text-transform: uppercase; margin-bottom: 5px; }
-    .offer-price { font-size: 2.2rem; font-weight: 800; color: #0f172a; margin: 5px 0; }
-    .offer-desc { font-size: 0.85rem; color: #64748b; margin-bottom: 10px; }
-    .offer-benefit { background-color: #eff6ff; color: #1e40af; padding: 8px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; margin-top: 10px; }
+    
+    /* Tarjetas de Oferta */
+    .offer-card { background: white; border: 1px solid #cbd5e1; border-radius: 16px; padding: 20px; text-align: center; height: 100%; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .offer-title { color: #1e40af; font-weight: 800; text-transform: uppercase; margin-bottom: 5px; font-size: 1.1rem; }
+    .offer-price { font-size: 2.5rem; font-weight: 800; color: #0f172a; margin: 10px 0; }
+    .offer-desc { font-size: 0.9rem; color: #64748b; margin-bottom: 10px; }
+    
+    /* Explicaciones de Ganancia */
+    .profit-box { background-color: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 10px; margin-top: 15px; text-align: left; font-size: 0.85rem; border-radius: 4px; }
+    .profit-title { font-weight: bold; color: #0369a1; display: block; margin-bottom: 4px; }
+    
     .badge-excess { background-color: #fee2e2; color: #991b1b; font-size: 0.8rem; padding: 4px 8px; border-radius: 10px; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
 # --- BACKEND ---
 def init_db():
-    conn = sqlite3.connect('mps_cfo_v8_1.db')
+    conn = sqlite3.connect('mipc_mps_v9.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS equipos
                  (id INTEGER PRIMARY KEY, marca TEXT, modelo TEXT, tipo TEXT, 
@@ -104,8 +125,7 @@ def get_detalles_equipo(equipo_id, volumen_unit, incluir_papel, costo_papel):
     
     eq = pd.read_sql_query(f"SELECT * FROM equipos WHERE id = {equipo_id}", conn).iloc[0]
     
-    # Cálculos unitarios de hardware (Amortización simple para referencia)
-    amort_mensual = eq['costo_adq'] / 36 # Referencial 36 meses
+    amort_mensual = eq['costo_adq'] / 36
     costo_hw_pag = amort_mensual / volumen_unit if volumen_unit > 0 else 0
     
     return {
@@ -120,8 +140,7 @@ if 'financiamiento' not in st.session_state: st.session_state['financiamiento'] 
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2885/2885456.png", width=70)
-    st.markdown("### Configuración")
+    st.header("Configuración")
     margen_meta = st.slider("Margen Meta (%)", 10, 60, 30) / 100
     st.divider()
     incluir_papel = st.toggle("Incluir Papel", value=True)
@@ -133,7 +152,7 @@ with st.sidebar:
         st.rerun()
 
 # --- TABS ---
-tabs = st.tabs(["🛠️ 1. Inventario", "🏗️ 2. Armador", "💰 3. Financiamiento", "📊 4. Oferta Comercial", "📈 5. Proyección", "📦 6. Stock", "🧮 7. Calculadora Rápida"])
+tabs = st.tabs(["🛠️ 1. Inventario", "🏗️ 2. Armador", "💰 3. Financiamiento", "📊 4. Oferta Comercial", "📈 5. Proyección", "📦 6. Stock", "🧮 7. Calculadora"])
 
 # ================= TAB 1: INVENTARIO =================
 with tabs[0]:
@@ -207,10 +226,8 @@ with tabs[1]:
                         "Sede": sede, "Modelo": det['modelo'], "Cantidad": cant, "Vol. Unit": vol,
                         "Vol. Total": vol*cant, "Inversión": det['costo_adq']*cant,
                         "OPEX Fijo": det['manto']*cant, "OPEX Var": det['opex_var']*cant, "Eq_ID": id_eq,
-                        # DATOS EXTRA PARA TABLA DETALLADA
                         "Costo HW Mes": (det['amort_mensual'] + det['manto']) * cant, 
-                        "Costo HW Unit": det['hw_cpp'],
-                        "Costo Toner Unit": det['cpp']
+                        "Costo HW Unit": det['hw_cpp'], "Costo Toner Unit": det['cpp']
                     })
                     st.rerun()
 
@@ -218,16 +235,14 @@ with tabs[1]:
             st.divider()
             df_proy = pd.DataFrame(st.session_state['proyecto'])
             
-            # --- CORRECCIÓN AQUÍ: USAMOS None PARA OCULTAR COLUMNAS ---
+            # USO DE None PARA EVITAR BUG DE HIDDEN
             edited_proy = st.data_editor(df_proy, column_config={
                     "Cantidad": st.column_config.NumberColumn("Cant.", min_value=1),
                     "Vol. Unit": st.column_config.NumberColumn("Vol. Unit", min_value=1),
                     "Modelo": st.column_config.TextColumn("Modelo", disabled=True),
                     "Vol. Total": st.column_config.NumberColumn("Vol. Total", disabled=True),
                     "Inversión": st.column_config.NumberColumn("Inversión", disabled=True),
-                    "Costo HW Mes": None,
-                    "Costo HW Unit": None,
-                    "Costo Toner Unit": None
+                    "Costo HW Mes": None, "Costo HW Unit": None, "Costo Toner Unit": None
                 }, use_container_width=True, hide_index=True)
             
             if not df_proy.equals(edited_proy):
@@ -274,7 +289,7 @@ with tabs[2]:
                 st.metric("Intereses Totales", f"${interes_total:,.2f}")
                 st.plotly_chart(px.bar(df_amort, x="Mes", y=["Capital", "Interés"]), use_container_width=True)
 
-# ================= TAB 4: OFERTA COMERCIAL (DETALLADA) =================
+# ================= TAB 4: OFERTA COMERCIAL (EXPLICADA) =================
 with tabs[3]:
     st.subheader("Oferta Comercial y Desglose")
     if len(st.session_state['proyecto']) > 0:
@@ -282,16 +297,11 @@ with tabs[3]:
         
         # 1. TABLA DETALLADA
         st.markdown("### 🔬 Desglose Unitario Real")
-        st.markdown("Aquí ves exactamente cuánto te cuesta la máquina vs. cuánto te cuesta el tóner.")
-        
         cols_mostrar = df[["Sede", "Modelo", "Vol. Unit", "Costo HW Mes", "Costo HW Unit", "Costo Toner Unit"]].copy()
         cols_mostrar["Costo HW Mes (Por Máquina)"] = cols_mostrar["Costo HW Mes"] / df["Cantidad"]
         
         st.dataframe(cols_mostrar[["Sede", "Modelo", "Vol. Unit", "Costo HW Mes (Por Máquina)", "Costo HW Unit", "Costo Toner Unit"]].style.format({
-            "Vol. Unit": "{:,.0f}",
-            "Costo HW Mes (Por Máquina)": "${:,.2f}",
-            "Costo HW Unit": "${:.5f}",
-            "Costo Toner Unit": "${:.5f}"
+            "Vol. Unit": "{:,.0f}", "Costo HW Mes (Por Máquina)": "${:,.2f}", "Costo HW Unit": "${:.5f}", "Costo Toner Unit": "${:.5f}"
         }), use_container_width=True)
         
         st.divider()
@@ -312,13 +322,29 @@ with tabs[3]:
         excedente = p_unico * 1.15
         
         c1, c2, c3 = st.columns(3)
-        with c1: st.markdown(f"""<div class="offer-card"><div class="offer-title">A. PLAN VARIABLE</div><div class="offer-price">${p_unico:.4f}</div><div class="offer-desc">All-In por hoja</div></div>""", unsafe_allow_html=True)
-        with c2: st.markdown(f"""<div class="offer-card"><div class="offer-title">B. PLAN HÍBRIDO</div><div class="offer-price">${renta:,.2f}</div><div class="offer-desc">+ Click: ${click:.4f}</div></div>""", unsafe_allow_html=True)
-        with c3: st.markdown(f"""<div class="offer-card"><div class="offer-title">C. TARIFA PLANA</div><div class="offer-price">${fact_meta:,.2f}</div><div class="badge-excess">Exc: ${excedente:.4f}</div></div>""", unsafe_allow_html=True)
+        with c1: 
+            st.markdown(f"""<div class="offer-card"><div class="offer-title">A. PLAN VARIABLE</div><div class="offer-price">${p_unico:.4f}</div><div class="offer-desc">All-In por hoja</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="profit-box"><span class="profit-title">💰 Ganancia Neta:</span>
+            Depende 100% del volumen. Si el cliente no imprime, <b>PIERDES</b> (porque tú pagas la cuota del equipo y no recibes ingresos).<br>
+            <i>Ganancia = (Precio - Costo Total) x Hojas Reales.</i></div>""", unsafe_allow_html=True)
 
-# ================= TAB 5: PROYECCIÓN =================
+        with c2: 
+            st.markdown(f"""<div class="offer-card"><div class="offer-title">B. PLAN HÍBRIDO</div><div class="offer-price">${renta:,.2f}</div><div class="offer-desc">+ Click: ${click:.4f}</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="profit-box"><span class="profit-title">🛡️ Ganancia Neta:</span>
+            <b>ASEGURADA.</b> La Renta Fija (${renta:,.2f}) cubre la deuda del equipo + tu ganancia base.<br>
+            El Click (${click:.4f}) cubre el tóner + tu ganancia extra.<br>
+            <i>Si no imprimen, igual ganas tu 30% sobre el hardware.</i></div>""", unsafe_allow_html=True)
+
+        with c3: 
+            st.markdown(f"""<div class="offer-card"><div class="offer-title">C. TARIFA PLANA</div><div class="offer-price">${fact_meta:,.2f}</div><div class="badge-excess">Exc: ${excedente:.4f}</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="profit-box"><span class="profit-title">⚖️ Ganancia Neta:</span>
+            Estable. Recibes ${fact_meta:,.2f} fijos.<br>
+            <b>Riesgo:</b> Si imprimen hasta el límite, tu margen es el 30%. Si imprimen menos, tu margen SUBE (porque gastas menos tóner).<br>
+            <i>Si se pasan, cobras excedente con penalidad.</i></div>""", unsafe_allow_html=True)
+
+# ================= TAB 5: PROYECCIÓN (RESTORED) =================
 with tabs[4]:
-    st.subheader("Proyección")
+    st.subheader("Proyección Financiera")
     if len(st.session_state['proyecto']) > 0:
         meses = st.slider("Meses", 12, 60, 36)
         inv_inicial = fin.get('Inv', 0)
@@ -333,8 +359,28 @@ with tabs[4]:
             flujo.append({"Mes": m, "Neto": neto, "Acumulado": saldo})
         
         df_f = pd.DataFrame(flujo)
+        
+        # 1. Gráficos
         st.plotly_chart(px.bar(df_f, x="Mes", y="Neto", title="Cash Flow Mensual", color="Neto", color_continuous_scale=["red", "green"]), use_container_width=True)
         st.plotly_chart(go.Figure().add_trace(go.Scatter(x=df_f['Mes'], y=df_f['Acumulado'], fill='tozeroy')).add_hline(y=0, line_color="red"), use_container_width=True)
+        
+        # 2. Métricas y Descarga (RESTORED)
+        st.divider()
+        k1, k2, k3 = st.columns(3)
+        
+        # VPN
+        tasa_desc = 0.10 / 12
+        vpn = sum(x['Neto'] / ((1 + tasa_desc) ** i) for i, x in enumerate(flujo, 1))
+        k1.metric("VPN (Valor Presente Neto 10%)", f"${vpn:,.2f}")
+        
+        # Payback
+        recup = df_f[df_f['Acumulado'] >= 0]
+        payback = recup.iloc[0]['Mes'] if not recup.empty else "N/A"
+        k2.metric("Mes de Recuperación", payback)
+        
+        # Download
+        csv = df_f.to_csv(index=False).encode('utf-8')
+        k3.download_button("📥 Descargar Proyección (Excel)", data=csv, file_name="proyeccion_mipc.csv", mime="text/csv", type="primary")
 
 # ================= TAB 6: STOCK =================
 with tabs[5]:
@@ -353,8 +399,6 @@ with tabs[5]:
 # ================= TAB 7: CALCULADORA RÁPIDA =================
 with tabs[6]:
     st.subheader("🧮 Calculadora de Matriz de Precios")
-    st.markdown("Genera una tabla rápida de precios All-In para una sola impresora en diferentes volúmenes.")
-    
     eq_list = pd.read_sql("SELECT id, modelo FROM equipos", conn)
     if not eq_list.empty:
         c1, c2, c3 = st.columns(3)
@@ -366,20 +410,12 @@ with tabs[6]:
             detalles_base = get_detalles_equipo(sel_eq_rapido, 1, papel_rapido, costo_papel)
             costo_fijo_mensual = detalles_base['costo_adq'] / 36 + detalles_base['manto']
             costo_var_unit = detalles_base['cpp']
-            
             volumenes = [500, 1000, 2000, 3000, 5000, 10000, 15000, 20000, 30000, 50000]
             matriz = []
             for vol in volumenes:
                 cf_pag = costo_fijo_mensual / vol
                 costo_total_unit = cf_pag + costo_var_unit
                 precio_venta = costo_total_unit / (1 - margen_rapido)
-                matriz.append({
-                    "Volumen Mensual": f"{vol:,.0f}",
-                    "Costo Fijo/Pág": f"${cf_pag:.4f}",
-                    "Costo Var/Pág": f"${costo_var_unit:.4f}",
-                    "Costo Total": f"${costo_total_unit:.4f}",
-                    "PRECIO VENTA": f"${precio_venta:.4f}"
-                })
+                matriz.append({"Volumen Mensual": f"{vol:,.0f}", "Costo Fijo/Pág": f"${cf_pag:.4f}", "Costo Var/Pág": f"${costo_var_unit:.4f}", "Costo Total": f"${costo_total_unit:.4f}", "PRECIO VENTA": f"${precio_venta:.4f}"})
             st.write(f"**Análisis para: {detalles_base['modelo']}** (Con margen del {margen_rapido*100:.0f}%)")
             st.dataframe(pd.DataFrame(matriz), use_container_width=True)
-            st.info("💡 Usa esta tabla para responder rápido al cliente: '¿Y si solo imprimo 1,000 hojas?'")
