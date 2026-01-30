@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- CONFIGURACIÓN ---
-st.set_page_config(page_title="MPS Quote Engine V8.0", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="MPS Quote Engine V8.1", page_icon="🚀", layout="wide")
 
 st.title("🚀 MPS QUOTE ENGINE | Generador de Contratos")
 st.markdown("Simulador financiero integral: Costos Unitarios, Proyecciones y Matriz de Precios Rápida.")
@@ -30,7 +30,7 @@ st.markdown("""
 
 # --- BACKEND ---
 def init_db():
-    conn = sqlite3.connect('mps_cfo_v8.db')
+    conn = sqlite3.connect('mps_cfo_v8_1.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS equipos
                  (id INTEGER PRIMARY KEY, marca TEXT, modelo TEXT, tipo TEXT, 
@@ -217,15 +217,17 @@ with tabs[1]:
         if len(st.session_state['proyecto']) > 0:
             st.divider()
             df_proy = pd.DataFrame(st.session_state['proyecto'])
+            
+            # --- CORRECCIÓN AQUÍ: USAMOS None PARA OCULTAR COLUMNAS ---
             edited_proy = st.data_editor(df_proy, column_config={
                     "Cantidad": st.column_config.NumberColumn("Cant.", min_value=1),
                     "Vol. Unit": st.column_config.NumberColumn("Vol. Unit", min_value=1),
                     "Modelo": st.column_config.TextColumn("Modelo", disabled=True),
                     "Vol. Total": st.column_config.NumberColumn("Vol. Total", disabled=True),
                     "Inversión": st.column_config.NumberColumn("Inversión", disabled=True),
-                    "Costo HW Mes": st.column_config.NumberColumn(hidden=True),
-                    "Costo HW Unit": st.column_config.NumberColumn(hidden=True),
-                    "Costo Toner Unit": st.column_config.NumberColumn(hidden=True)
+                    "Costo HW Mes": None,
+                    "Costo HW Unit": None,
+                    "Costo Toner Unit": None
                 }, use_container_width=True, hide_index=True)
             
             if not df_proy.equals(edited_proy):
@@ -278,16 +280,11 @@ with tabs[3]:
     if len(st.session_state['proyecto']) > 0:
         df = pd.DataFrame(st.session_state['proyecto'])
         
-        # 1. TABLA DETALLADA (LO QUE PEDISTE)
+        # 1. TABLA DETALLADA
         st.markdown("### 🔬 Desglose Unitario Real")
         st.markdown("Aquí ves exactamente cuánto te cuesta la máquina vs. cuánto te cuesta el tóner.")
         
-        # Preparamos la data para mostrar
-        # Costo Equipo Mensual = Amortizacion (Ref 36 meses) + Mantenimiento
-        # Costo Equipo x Impresion = (Costo Equipo Mensual) / Volumen
-        
         cols_mostrar = df[["Sede", "Modelo", "Vol. Unit", "Costo HW Mes", "Costo HW Unit", "Costo Toner Unit"]].copy()
-        # Ajustamos Costo HW Mes para que sea unitario por máquina, no por lote
         cols_mostrar["Costo HW Mes (Por Máquina)"] = cols_mostrar["Costo HW Mes"] / df["Cantidad"]
         
         st.dataframe(cols_mostrar[["Sede", "Modelo", "Vol. Unit", "Costo HW Mes (Por Máquina)", "Costo HW Unit", "Costo Toner Unit"]].style.format({
@@ -353,7 +350,7 @@ with tabs[5]:
                     stock_list.append({"Sede": row['Sede'], "Equipo": row['Modelo'], "Insumo": r['tipo'], "Consumo Mes": f"{cons_mes:.2f}", "Stock (6m)": f"{np.ceil(cons_mes*6):.0f}"})
         st.dataframe(pd.DataFrame(stock_list), use_container_width=True)
 
-# ================= TAB 7: CALCULADORA RÁPIDA (NUEVA) =================
+# ================= TAB 7: CALCULADORA RÁPIDA =================
 with tabs[6]:
     st.subheader("🧮 Calculadora de Matriz de Precios")
     st.markdown("Genera una tabla rápida de precios All-In para una sola impresora en diferentes volúmenes.")
@@ -366,21 +363,16 @@ with tabs[6]:
         papel_rapido = c3.checkbox("Incluir Papel", value=True)
         
         if sel_eq_rapido:
-            # Obtener datos base
             detalles_base = get_detalles_equipo(sel_eq_rapido, 1, papel_rapido, costo_papel)
-            costo_fijo_mensual = detalles_base['costo_adq'] / 36 + detalles_base['manto'] # Amortización simple + Manto
+            costo_fijo_mensual = detalles_base['costo_adq'] / 36 + detalles_base['manto']
             costo_var_unit = detalles_base['cpp']
             
-            # Generar Matriz
             volumenes = [500, 1000, 2000, 3000, 5000, 10000, 15000, 20000, 30000, 50000]
             matriz = []
-            
             for vol in volumenes:
-                # Costo Fijo por Pagina = Costo Fijo Mensual / Volumen
                 cf_pag = costo_fijo_mensual / vol
                 costo_total_unit = cf_pag + costo_var_unit
                 precio_venta = costo_total_unit / (1 - margen_rapido)
-                
                 matriz.append({
                     "Volumen Mensual": f"{vol:,.0f}",
                     "Costo Fijo/Pág": f"${cf_pag:.4f}",
@@ -388,7 +380,6 @@ with tabs[6]:
                     "Costo Total": f"${costo_total_unit:.4f}",
                     "PRECIO VENTA": f"${precio_venta:.4f}"
                 })
-            
             st.write(f"**Análisis para: {detalles_base['modelo']}** (Con margen del {margen_rapido*100:.0f}%)")
             st.dataframe(pd.DataFrame(matriz), use_container_width=True)
             st.info("💡 Usa esta tabla para responder rápido al cliente: '¿Y si solo imprimo 1,000 hojas?'")
